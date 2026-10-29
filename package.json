@@ -1,0 +1,28 @@
+{
+  "name": "videosdk-file-explorer",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A framework-agnostic JavaScript File Explorer SDK with a React (Vite) application that consumes it.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.4.8",
+    "@testing-library/react": "16.0.1",
+    "@testing-library/user-event": "14.5.2",
+    "@vitejs/plugin-react": "4.3.1",
+    "jsdom": "25.0.0",
+    "vite": "5.4.2",
+    "vitest": "2.0.5"
+  }
+}
