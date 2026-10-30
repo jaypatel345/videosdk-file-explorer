@@ -1,10 +1,13 @@
-// App — top-level composition. Owns UI-only state (expanded folders, selected
-// item, multi-select checkboxes, search options) and wires stable callbacks
-// down to child components. File-system state lives entirely in the SDK via
-// the useFileSystem hook.
+// App — top-level composition. File-system state lives in the SDK (via
+// useFileSystem). Tree UI state (expanded / selected / checked) lives in an
+// external store (treeUiStore) so individual tree nodes can subscribe to only
+// their own slice and avoid unnecessary re-renders (task section 4.3). Other
+// UI state (search options) is plain React state.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useFileSystem } from './useFileSystem.js';
+import { createTreeUiStore, useTreeUiState } from './treeUiStore.js';
 import { TreeView } from './components/TreeView.jsx';
 import { SearchBar, SearchResults } from './components/SearchBar.jsx';
 import { Toolbar, DetailsPanel, ActivityPanel, ErrorBanner } from './components/Panels.jsx';
@@ -14,10 +17,18 @@ export default function App() {
   const { tree, history, actions, lastError, clearError, activity, version } =
     useFileSystem();
 
-  // ---- UI-only state ------------------------------------------------------
-  const [expandedIds, setExpandedIds] = useState(() => new Set(['root']));
-  const [selectedId, setSelectedId] = useState('root');
-  const [checkedIds, setCheckedIds] = useState(() => new Set());
+  // External store for tree UI state (created once; stable reference).
+  const storeRef = useRef(null);
+  if (storeRef.current === null) storeRef.current = createTreeUiStore({ expanded: ['root'], selectedId: 'root' });
+  const store = storeRef.current;
+
+  // App subscribes to the whole UI state for things it renders directly
+  // (details panel, selected count). This re-renders <App/>, but NOT the tree
+  // nodes — they are memoised on { node, store } and read their own slice.
+  const ui = useTreeUiState(store);
+  const { selectedId, checked } = ui;
+
+  // Search UI state (plain React state).
   const [search, setSearch] = useState({
     query: '',
     type: 'all',
@@ -27,39 +38,11 @@ export default function App() {
     pageSize: 10,
   });
 
-  // ---- Keep UI state consistent when the tree changes --------------------
-  // If the selected or checked items no longer exist (e.g. deleted), drop them.
+  // When the file system changes, drop any selected/checked ids that no longer
+  // exist so UI state stays consistent with the tree.
   useEffect(() => {
-    if (selectedId && !actions.exists(selectedId)) setSelectedId('root');
-    setCheckedIds((prev) => {
-      let changed = false;
-      const next = new Set();
-      for (const id of prev) {
-        if (actions.exists(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [version, actions, selectedId]);
-
-  // ---- Stable callbacks (so memoised TreeNodes don't re-render needlessly)-
-  const onToggleExpand = useCallback((id) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }, []);
-
-  const onSelect = useCallback((id) => setSelectedId(id), []);
-
-  const onToggleCheck = useCallback((id) => {
-    setCheckedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }, []);
+    store.prune(actions.exists);
+  }, [version, store, actions]);
 
   // ---- Derived data -------------------------------------------------------
   const selectedItem = useMemo(
@@ -71,8 +54,6 @@ export default function App() {
     [selectedId, actions, version]
   );
 
-  // Search results are computed from the SDK and refreshed when the tree
-  // changes (version) or the search options change.
   const searchResult = useMemo(() => {
     if (!search.query.trim()) return null;
     try {
@@ -87,17 +68,17 @@ export default function App() {
     const name = window.prompt('New folder name:');
     if (name) {
       actions.createFolder(selectedId, name);
-      setExpandedIds((prev) => new Set(prev).add(selectedId));
+      store.expand(selectedId);
     }
-  }, [actions, selectedId]);
+  }, [actions, selectedId, store]);
 
   const handleNewFile = useCallback(() => {
     const name = window.prompt('New file name:');
     if (name) {
       actions.createFile(selectedId, name);
-      setExpandedIds((prev) => new Set(prev).add(selectedId));
+      store.expand(selectedId);
     }
-  }, [actions, selectedId]);
+  }, [actions, selectedId, store]);
 
   const handleRename = useCallback(() => {
     if (!selectedItem) return;
@@ -117,13 +98,13 @@ export default function App() {
   }, [actions, selectedItem]);
 
   const handleBulkDelete = useCallback(() => {
-    const ids = Array.from(checkedIds);
+    const ids = Array.from(checked);
     if (ids.length === 0) return;
     if (!window.confirm(`Delete ${ids.length} selected item(s)?`)) return;
     const ok = actions.deleteMany(ids);
     // Clear selection only on success; on failure keep it and show the error.
-    if (ok) setCheckedIds(new Set());
-  }, [actions, checkedIds]);
+    if (ok) store.setChecked([]);
+  }, [actions, checked, store]);
 
   return (
     <div className="app">
@@ -141,7 +122,7 @@ export default function App() {
         selectedItem={selectedItem}
         canUndo={history.canUndo}
         canRedo={history.canRedo}
-        checkedCount={checkedIds.size}
+        checkedCount={checked.size}
         onNewFile={handleNewFile}
         onNewFolder={handleNewFolder}
         onRename={handleRename}
@@ -155,15 +136,7 @@ export default function App() {
       <div className="layout">
         <section className="panel tree-panel">
           <h3>Files</h3>
-          <TreeView
-            tree={tree}
-            expandedIds={expandedIds}
-            selectedId={selectedId}
-            checkedIds={checkedIds}
-            onToggleExpand={onToggleExpand}
-            onSelect={onSelect}
-            onToggleCheck={onToggleCheck}
-          />
+          <TreeView tree={tree} store={store} />
         </section>
 
         <section className="panel search-panel">
@@ -177,7 +150,7 @@ export default function App() {
           />
           <SearchResults
             result={searchResult}
-            onSelect={(id) => setSelectedId(id)}
+            onSelect={(id) => store.select(id)}
             onPage={(page) => setSearch((s) => ({ ...s, page }))}
           />
         </section>
