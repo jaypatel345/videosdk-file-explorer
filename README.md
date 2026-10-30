@@ -1,5 +1,7 @@
 # VideoSDK File Explorer
 
+**Live Demo:** [https://videosdk-file-explorer.vercel.app](https://videosdk-file-explorer.vercel.app)
+
 A reusable, **framework-agnostic JavaScript File Explorer SDK** plus a **React (Vite)**
 application that uses it. The SDK manages a hierarchical, in-memory file/folder
 system (create, rename, move, delete, search, undo/redo, change subscriptions,
@@ -44,6 +46,7 @@ src/
 └── react/                   # === React UI ===
     ├── App.jsx               # composition + UI state + callbacks
     ├── useFileSystem.js      # custom hook bridging SDK <-> React
+    ├── treeUiStore.js        # external UI store for selective subscriptions (§4.3)
     └── components/
         ├── TreeView.jsx       # recursive, memoised tree (console.log here)
         ├── SearchBar.jsx      # search controls + results
@@ -268,7 +271,7 @@ and redoes as one unit.
 
 ## 9. Testing
 
-`npm test` runs **42 tests** across two files, covering success *and* failure:
+`npm test` runs **47 tests** across three files, covering success *and* failure:
 
 - **`tests/sdk.test.js`**: CRUD; case-insensitive duplicate rejection; create
   inside a file rejected; move-into-self/descendant rejected; empty-name and
@@ -284,6 +287,10 @@ and redoes as one unit.
   app renders the seeded tree, expands a folder, shows details on select, shows
   the error banner on an invalid op, shows the multi-select count, and updates
   search results.
+- **`tests/rerender.test.jsx`**: re-render isolation verification (§4.3) asserting
+  that selecting a file re-renders only the newly and previously selected nodes,
+  switching between siblings re-renders only those two, and expanding/collapsing a
+  folder re-renders only that folder without touching siblings.
 
 ---
 
